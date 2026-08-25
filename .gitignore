@@ -1,0 +1,19 @@
+# secrets
+.env
+web/.env
+*.local
+
+# deps / build
+node_modules/
+web/node_modules/
+web/dist/
+.vite/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# os
+.DS_Store
