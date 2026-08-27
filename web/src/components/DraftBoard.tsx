@@ -57,8 +57,8 @@ export default function DraftBoard({ players, picks, onUndoLast }: Props) {
               return (
                 <li key={pk.overall_pick}
                   className="flex items-center gap-2 text-sm font-display bg-coal2/40 rounded px-2 py-1">
-                  <span className="text-xs text-silver/60 w-12">
-                    font-mono {pk.round}.{String(((pk.overall_pick - 1) % 12) + 1).padStart(2, "0")}
+                  <span className="font-mono text-xs text-silver/60 w-12">
+                    {pk.round}.{String(((pk.overall_pick - 1) % 12) + 1).padStart(2, "0")}
                   </span>
                   {pl && <PosBadge pos={pl.position} />}
                   <span className="truncate">{pl?.name ?? pk.player_id}</span>

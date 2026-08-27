@@ -18,6 +18,7 @@ Env:  .env with SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, CFBD_API_KEY, FANTASYPR
 
 import os
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -35,6 +36,8 @@ OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
 
 SEASON = 2026
 NUM_TEAMS = 12
+MIN_DATASET_PLAYERS = 100
+MIN_SEASON_PROJECTION_PLAYERS = 24
 
 # ---------------------------------------------------------------------------
 # 2026 bye weeks - exact, from released schedule (mirror of shared/schedule.ts)
@@ -228,8 +231,7 @@ def fetch_espn_projections():
             nm = normalize(pl.get("fullName", ""))
             adp = item.get("draftRanksByRankType", {}).get("PPR", {}).get("rank")
             stats = pl.get("stats", [])
-            ps = next((s for s in stats if s.get("seasonId") == SEASON
-                       and s.get("statSourceId") == 1), None)
+            ps = select_espn_season_projection(stats)
             proj[nm] = {"adp": adp,
                         "espnProj": ps.get("appliedTotal") if ps else None,
                         "rawStats": ps.get("stats") if ps else None}
@@ -245,6 +247,14 @@ def fetch_espn_projections():
 #     Docs: https://fantasyfootballcalculator.com/api/v1/adp/ppr
 # ---------------------------------------------------------------------------
 def fetch_ffc_adp():
+    """Fetch current-season FFC ADP only.
+
+    A previous version silently substituted prior-season ADP when the current
+    year was unavailable. For a live 2026 draft that is worse than missing data:
+    it looks current but can materially distort reach/value and turn-survival
+    logic. Missing current-season FFC data now cleanly falls back to ESPN/FP in
+    the merge step instead.
+    """
     log("Fetching Fantasy Football Calculator ADP (12-team PPR)...")
     out = {}
     try:
@@ -255,13 +265,9 @@ def fetch_ffc_adp():
         )
         r.raise_for_status()
         players = r.json().get("players", [])
-        if not players:  # current season may be empty pre-release; fall back a year
-            r = requests.get(
-                "https://fantasyfootballcalculator.com/api/v1/adp/ppr",
-                params={"teams": 12, "year": SEASON - 1}, timeout=30,
-            )
-            r.raise_for_status()
-            players = r.json().get("players", [])
+        if not players:
+            log(f"  -> no FFC ADP published for {SEASON}; using ESPN/FP fallback")
+            return out
         for pl in players:
             nm = normalize(pl.get("name", ""))
             out[nm] = float(pl.get("adp")) if pl.get("adp") else None
@@ -357,8 +363,97 @@ def score_from_espn_raw(raw):
     return round(pts, 1)
 
 
+def select_espn_season_projection(stats):
+    """Select ESPN's *season-total* projected stat entry, never a weekly one.
+
+    ESPN stat arrays can contain multiple projected entries. `statSourceId == 1`
+    means projected, while `statSplitTypeId == 0` identifies the season-total
+    split. Some responses also expose the season aggregate as
+    `scoringPeriodId == 0`, so that is accepted as a compatibility fallback.
+
+    The previous implementation selected the first projected entry regardless
+    of split and then tried to repair weekly values with a `<100 => *17`
+    heuristic. That could both select the wrong entry and inflate legitimate
+    low season totals. We now select the correct split and refuse to guess.
+    """
+    candidates = [
+        s for s in (stats or [])
+        if s.get("seasonId") == SEASON and s.get("statSourceId") == 1
+    ]
+    return next((s for s in candidates if s.get("statSplitTypeId") == 0), None) \
+        or next((s for s in candidates if s.get("scoringPeriodId") == 0), None)
+
+
+def resolve_espn_projection(espn_row):
+    """Return a full-season league-scored projection from a selected ESPN row."""
+    raw_proj = score_from_espn_raw(espn_row.get("rawStats"))
+    if raw_proj is not None:
+        return raw_proj
+
+    applied = espn_row.get("espnProj")
+    if applied is None:
+        return 0.0
+    return round(float(applied), 1)
+
+
 def normalize(nm):
     return (nm or "").lower().replace(".", "").replace("'", "").strip()
+
+
+def validate_dataset(rows):
+    """Fail closed before replacing the offline snapshot or touching Supabase.
+
+    The draft engine needs a broad pool with season-scale projections. A partial
+    or empty API result should never overwrite the last known-good `players.json`.
+    """
+    if not isinstance(rows, list) or len(rows) < MIN_DATASET_PLAYERS:
+        raise ValueError(
+            f"dataset sanity check failed: expected at least {MIN_DATASET_PLAYERS} players, got {len(rows) if isinstance(rows, list) else 'non-list'}"
+        )
+
+    ids = set()
+    valid_positions = {"QB", "RB", "WR", "TE", "K", "DEF"}
+    season_scale_count = 0
+    for row in rows:
+        pid = row.get("playerId")
+        if not pid or pid in ids:
+            raise ValueError(f"dataset sanity check failed: missing/duplicate playerId {pid!r}")
+        ids.add(pid)
+
+        if row.get("position") not in valid_positions:
+            raise ValueError(f"dataset sanity check failed: invalid position for {pid}: {row.get('position')!r}")
+
+        proj = row.get("projPoints", 0)
+        adp = row.get("adp", 999)
+        if not isinstance(proj, (int, float)) or not math.isfinite(float(proj)) or proj < 0:
+            raise ValueError(f"dataset sanity check failed: invalid projection for {pid}: {proj!r}")
+        if not isinstance(adp, (int, float)) or not math.isfinite(float(adp)) or adp <= 0:
+            raise ValueError(f"dataset sanity check failed: invalid ADP for {pid}: {adp!r}")
+
+        if row.get("position") in {"QB", "RB", "WR", "TE"} and proj >= 100:
+            season_scale_count += 1
+
+    if season_scale_count < MIN_SEASON_PROJECTION_PLAYERS:
+        raise ValueError(
+            "dataset sanity check failed: too few season-scale QB/RB/WR/TE projections; "
+            "refusing to overwrite the offline snapshot with likely partial/per-game data"
+        )
+
+    return rows
+
+
+def write_dataset_atomic(rows, path=OUT_JSON):
+    """Validate then atomically replace the local fallback JSON."""
+    validate_dataset(rows)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        tmp.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
 
 # ---------------------------------------------------------------------------
@@ -380,14 +475,7 @@ def build():
         f = fp.get(key, {})
         ffc_adp = ffc.get(key)
 
-        proj = score_from_espn_raw(e.get("rawStats"))
-        if proj is None:
-            proj = e.get("espnProj")
-        # ESPN sometimes returns per-game applied totals; scale to season.
-        if proj is not None and proj < 100:
-            proj = proj * 17
-        if proj is None:
-            proj = 0.0
+        proj = resolve_espn_projection(e)
 
         # ADP layering: prefer real-draft FFC ADP, then ESPN, then FP ECR.
         espn_adp = e.get("adp")
@@ -425,7 +513,10 @@ def build():
     merged.sort(key=lambda x: (-x["projPoints"], x["adp"]))
     log(f"Merged dataset: {len(merged)} players")
 
-    OUT_JSON.write_text(json.dumps(merged, indent=2))
+    # Validate before either persistence target. A failed/partial upstream pull
+    # must not destroy the last known-good offline snapshot or live player table.
+    validate_dataset(merged)
+    write_dataset_atomic(merged)
     log(f"Wrote local fallback -> {OUT_JSON}")
 
     push_to_supabase(merged)
@@ -433,6 +524,9 @@ def build():
 
 
 def push_to_supabase(rows):
+    # Re-validate here so this function is safe if invoked independently.
+    validate_dataset(rows)
+
     url = os.getenv("SUPABASE_URL")
     key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     if not url or not key:
@@ -474,6 +568,6 @@ def push_to_supabase(rows):
 if __name__ == "__main__":
     try:
         build()
-    except requests.HTTPError as e:
-        log(f"FATAL HTTP error: {e}")
+    except (requests.HTTPError, ValueError) as e:
+        log(f"FATAL: {e}")
         sys.exit(1)
