@@ -79,20 +79,45 @@ export default function MyRoster({ players, picks, mySlot }: Props) {
       </Panel>
 
       {pair && pair.thisPick !== pair.nextPick && (
-        <Panel title="Turn-Pair Lookahead">
-          <div className="p-3 text-xs text-silver/70">
-            Your next two picks: <span className="text-kelly font-semibold">#{pair.thisPick}</span>
-            {" "}and <span className="text-kelly font-semibold">#{pair.nextPick}</span>. Likely still
-            available at #{pair.nextPick} — plan the pair together:
+        <Panel accent title="Turn-Pair Strategy">
+          <div className="p-3 space-y-3">
+            <p className="text-[12px] leading-relaxed text-silver/85 border-l-2 border-kelly/40 pl-2.5">
+              {pair.strategy}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-bad/80 font-bold mb-1">
+                  Grab now — won't last
+                </div>
+                <ul className="space-y-1">
+                  {pair.grabNow.slice(0, 6).map((p) => (
+                    <li key={p.playerId} className="flex items-center gap-1 text-xs">
+                      <PosBadge pos={p.position} />
+                      <span className="truncate">{p.name}</span>
+                      <span className="text-silver/50 ml-auto">{p.projPoints.toFixed(0)}</span>
+                    </li>
+                  ))}
+                  {pair.grabNow.length === 0 && (
+                    <li className="text-[11px] text-silver/50 italic">nothing scarce right now</li>
+                  )}
+                </ul>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-good/80 font-bold mb-1">
+                  Can wait — likely at #{pair.nextPick}
+                </div>
+                <ul className="space-y-1">
+                  {pair.likelyAtNext.slice(0, 6).map((p) => (
+                    <li key={p.playerId} className="flex items-center gap-1 text-xs">
+                      <PosBadge pos={p.position} />
+                      <span className="truncate">{p.name}</span>
+                      <span className="text-silver/50 ml-auto">{p.projPoints.toFixed(0)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </div>
-          <ul className="px-3 pb-3 grid grid-cols-2 gap-1">
-            {pair.likelyAtNext.slice(0, 8).map((p) => (
-              <li key={p.playerId} className="flex items-center gap-1 text-xs">
-                <PosBadge pos={p.position} />
-                <span className="truncate">{p.name}</span>
-              </li>
-            ))}
-          </ul>
         </Panel>
       )}
     </div>

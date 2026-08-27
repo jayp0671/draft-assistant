@@ -19,6 +19,12 @@ export interface PlayerRow {
   draft_round: number | null;
   draft_pick: number | null;
   fp_ecr: number | null;
+  ffc_adp: number | null;
+  adp_confidence: "high" | "low" | null;
+  adp_spread: number | null;
+  career_trend: "rising" | "stable" | "declining" | null;
+  career_trend_pct: number | null;
+  recency_ppg: number | null;
 }
 
 export interface PickRow {
@@ -62,5 +68,11 @@ export function toEnginePlayer(r: any): Player {
     draftRound: r.draft_round ?? r.draftRound ?? undefined,
     draftPick: r.draft_pick ?? r.draftPick ?? undefined,
     fpEcr: r.fp_ecr ?? r.fpEcr ?? undefined,
+    ffcAdp: r.ffc_adp ?? r.ffcAdp ?? undefined,
+    adpConfidence: r.adp_confidence ?? r.adpConfidence ?? undefined,
+    adpSpread: r.adp_spread ?? r.adpSpread ?? undefined,
+    careerTrend: r.career_trend ?? r.careerTrend ?? undefined,
+    careerTrendPct: r.career_trend_pct ?? r.careerTrendPct ?? undefined,
+    recencyPpg: r.recency_ppg ?? r.recencyPpg ?? undefined,
   };
 }

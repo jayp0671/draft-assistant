@@ -116,16 +116,22 @@ export default function Recommendations({ players, picks, mySlot, onQuickLog }: 
                         <Chip tone="warn">reach {r.adpValue}</Chip>
                       )}
                       {byeConflict && <Chip tone="bad">bye stack wk{p.byeWeek}</Chip>}
+                      {p.careerTrend === "rising" && <Chip tone="good">↑ rising usage</Chip>}
+                      {p.careerTrend === "declining" && <Chip tone="warn">↓ declining</Chip>}
+                      {p.recencyPpg != null && p.recencyPpg >= 14 && <Chip tone="good">hot: {p.recencyPpg} PPG late</Chip>}
+                      {p.adpConfidence === "low" && <Chip tone="warn">ADP uncertain</Chip>}
                       {p.depthChartOrder === 1 && <Chip>starter</Chip>}
                       {p.depthChartOrder && p.depthChartOrder > 1 && <Chip tone="warn">depth {p.depthChartOrder}</Chip>}
                       {p.gamesMissed2y != null && p.gamesMissed2y >= 6 && (
                         <Chip tone="warn">{p.gamesMissed2y} G missed 2y</Chip>
                       )}
                       {p.draftRound != null && p.isRookie && <Chip>Rd{p.draftRound} rookie</Chip>}
-                      {r.reasons.slice(0, 2).map((rs, idx) => (
-                        <Chip key={idx}>{rs}</Chip>
-                      ))}
                     </div>
+
+                    {/* full reasoning — the "why this pick" explanation */}
+                    <p className="mt-2 text-[12px] leading-relaxed text-silver/80 border-l-2 border-kelly/40 pl-2.5">
+                      {r.reasoning}
+                    </p>
                   </div>
 
                   {/* action */}
