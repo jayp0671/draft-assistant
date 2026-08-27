@@ -19,6 +19,11 @@ Real-time, multi-user fantasy football draft decision-support tool for a
 - FantasyPros consensus ranks as an ADP backup (rate-limited to protect the
   free 50/day cap — only 6 requests per pipeline run)
 - **Reset Draft** button (password protected) + a fixed **Undo** button
+- Per-pick **reasoning** ("why this pick") generated from the data on every card
+- **Fantasy Football Calculator** real-draft ADP as an independent source, with
+  an ADP-confidence flag when sources disagree
+- **Career-arc trend** (rising/declining usage) and **recency** (late-season PPG)
+- Upgraded **turn-pair strategy** — grab-now vs. can-wait split for picks 11 & 14
 
 ---
 
@@ -67,6 +72,7 @@ In your Supabase project → **SQL Editor**, paste and run, in order:
 1. `supabase/migrations/0001_init.sql`
 2. `supabase/migrations/0002_seed.sql`
 3. `supabase/migrations/0003_enrichment_columns.sql`
+4. `supabase/migrations/0004_adp_and_trend_columns.sql`
 
 (Or, with the Supabase CLI: `supabase db push`.)
 

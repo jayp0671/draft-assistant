@@ -41,6 +41,12 @@ export interface Player {
   draftRound?: number;    // NFL draft round (rookies)
   draftPick?: number;     // NFL draft overall pick (rookies)
   fpEcr?: number;         // FantasyPros expert consensus rank (backup ADP)
+  ffcAdp?: number;        // Fantasy Football Calculator real-draft PPR ADP (independent)
+  adpConfidence?: "high" | "low"; // low when sources disagree materially
+  adpSpread?: number;     // |espn - ffc| absolute disagreement in picks
+  careerTrend?: "rising" | "stable" | "declining"; // multi-season usage arc
+  careerTrendPct?: number; // signed pct change in usage across seasons
+  recencyPpg?: number;    // avg fantasy pts/game over last games of prior season
 }
 
 export interface DraftPick {
@@ -65,9 +71,12 @@ export interface Recommendation {
   player: Player;
   vorp: number;           // value over replacement (raw)
   score: number;          // final ranking score after need + scarcity weighting
-  reasons: string[];      // plain-language explanation (Charter 6.3)
+  reasons: string[];      // short reason chips (Charter 6.3)
+  reasoning: string;      // full plain-language "why this pick" paragraph
   fillsNeed: boolean;
   adpValue: number;       // (adp - currentPick): positive = falling/value
+  posRank: number;        // rank at position among available (1 = best)
+  tier?: number;
 }
 
 // ----------------------------------------------------------------------------
@@ -283,48 +292,122 @@ export function recommend(
     const fills = fillsStartingNeed(p.position, need);
     const needMult = fills ? 1.15 : (need.BN > 0 ? 1.0 : 0.85);
 
-    // ADP value: positive means player is falling past their ADP (a deal)
-    const adpValue = p.adp - currentOverall;
+    // Effective ADP: prefer real-draft FFC ADP, fall back to ESPN adp field.
+    const effAdp = (p.ffcAdp && p.ffcAdp < 999) ? p.ffcAdp : p.adp;
+    const adpValue = effAdp - currentOverall;
     const adpBonus = adpValue > 0 ? Math.min(adpValue, 24) * 0.3 : Math.max(adpValue, -24) * 0.15;
 
-    const score = vorp * roundMult * injMult * needMult + adpBonus;
+    // small career-trend nudge (rising players get a slight bump, declining a slight cut)
+    const trendMult = p.careerTrend === "rising" ? 1.04
+      : p.careerTrend === "declining" ? 0.96 : 1.0;
 
-    // ---- plain-language reasons (Charter 6.3) ----
+    const score = vorp * roundMult * injMult * needMult * trendMult + adpBonus;
+
+    // ---- short reason chips ----
     const reasons: string[] = [];
     const posBest = posRank === 1;
     if (posBest) reasons.push(`Best available ${p.position} by projection`);
     else reasons.push(`${ordinal(posRank)}-best ${p.position} available`);
-
     if (vorp > 0) reasons.push(`+${vorp.toFixed(0)} pts over replacement`);
     if (fills) {
       const slot = startingSlotLabel(p.position, need);
       if (slot) reasons.push(`fills your open ${slot}`);
     }
-    if (adpValue >= 6) reasons.push(`value: ${adpValue} picks past its ADP`);
-    else if (adpValue <= -8) reasons.push(`reach: ${-adpValue} picks ahead of ADP`);
-
+    if (adpValue >= 6) reasons.push(`value: ${adpValue.toFixed(0)} picks past ADP`);
+    else if (adpValue <= -8) reasons.push(`reach: ${(-adpValue).toFixed(0)} picks early`);
     if (p.injuryStatus && injMult < 1) reasons.push(`injury: ${p.injuryStatus}`);
     if ((p.position === "K" || p.position === "DEF") && round < state.totalRounds - 1) {
       reasons.push(`too early for ${p.position} — wait`);
     }
-    if (p.position === "QB" && round < 6 && !posBest) {
-      reasons.push(`QB is deep — can wait`);
-    }
+    if (p.position === "QB" && round < 6 && !posBest) reasons.push(`QB is deep — can wait`);
     const tier = tierById.get(p.playerId);
     if (tier) reasons.push(`Tier ${tier} ${p.position}`);
+
+    const reasoning = buildReasoning({
+      p, posRank, posBest, vorp, fills, need, adpValue, effAdp,
+      round, totalRounds: state.totalRounds, tier, currentOverall,
+    });
 
     return {
       player: { ...p, tier },
       vorp: Math.round(vorp * 10) / 10,
       score: Math.round(score * 10) / 10,
       reasons,
+      reasoning,
       fillsNeed: fills,
-      adpValue,
+      adpValue: Math.round(adpValue * 10) / 10,
+      posRank,
+      tier,
     };
   });
 
   recs.sort((a, b) => b.score - a.score);
   return recs.slice(0, topN);
+}
+
+// ----------------------------------------------------------------------------
+// Reasoning generator — the "why this pick" paragraph shown under each card.
+// Deterministic, data-driven, no fluff. Builds 2-4 sentences from the facts.
+// ----------------------------------------------------------------------------
+interface ReasonCtx {
+  p: Player; posRank: number; posBest: boolean; vorp: number; fills: boolean;
+  need: RosterNeed; adpValue: number; effAdp: number; round: number;
+  totalRounds: number; tier?: number; currentOverall: number;
+}
+
+function buildReasoning(c: ReasonCtx): string {
+  const { p, posRank, posBest, vorp, fills, need, adpValue, effAdp, round, totalRounds, tier } = c;
+  const s: string[] = [];
+
+  // 1) Value framing — lead with the strongest true statement.
+  if (posBest && vorp > 0) {
+    s.push(`${p.name} is the top ${p.position} left on the board and projects ${vorp.toFixed(0)} points above replacement at the position — the clearest value on the board right now.`);
+  } else if (vorp > 0) {
+    s.push(`${p.name} is the ${ordinal(posRank)}-best ${p.position} available and still carries a positive edge of ${vorp.toFixed(0)} points over a replacement-level starter.`);
+  } else {
+    s.push(`${p.name} is the ${ordinal(posRank)}-best ${p.position} available, though the projection edge over replacement here is thin.`);
+  }
+
+  // 2) Roster fit.
+  if (fills) {
+    const slot = startingSlotLabel(p.position, need);
+    s.push(`It fills your open ${slot ?? p.position} slot, addressing a real starting need rather than depth.`);
+  } else if (need.BN > 0) {
+    s.push(`Your starting ${p.position} spots are set, so this is a depth/upside add for the bench and flex flexibility.`);
+  }
+
+  // 3) Market signal (ADP).
+  if (adpValue >= 6) {
+    s.push(`The market has it going around pick ${effAdp.toFixed(0)}, so taking it at ${c.currentOverall} is buying a falling asset ${adpValue.toFixed(0)} spots below its going rate.`);
+  } else if (adpValue <= -8) {
+    s.push(`Note this is roughly ${(-adpValue).toFixed(0)} picks ahead of its ADP (${effAdp.toFixed(0)}), so you could likely wait a round and still get it — reach only if you love the fit.`);
+  } else if (effAdp < 999) {
+    s.push(`This lands right around its market ADP of ${effAdp.toFixed(0)}, so it's a fair-value pick at this slot.`);
+  }
+
+  // 4) Position-strategy guardrail (charter 4.2).
+  if ((p.position === "K" || p.position === "DEF") && round < totalRounds - 1) {
+    s.push(`Strategically, though, ${p.position} carries almost no early-round edge — you should stream this in the final two rounds and spend this pick on a skill position.`);
+  } else if (p.position === "QB" && round < 6 && !posBest) {
+    s.push(`Remember QB is deep this year; you can comfortably wait a few rounds and still land a strong starter.`);
+  }
+
+  // 5) Enrichment color — durability / trend / role / rookie, whichever is notable.
+  const extra: string[] = [];
+  if (p.careerTrend === "rising") extra.push(`usage has been trending up across recent seasons`);
+  else if (p.careerTrend === "declining") extra.push(`usage has been sliding in recent seasons — a yellow flag`);
+  if (p.targetShare != null && p.targetShare >= 0.24) extra.push(`commands a heavy ${(p.targetShare * 100).toFixed(0)}% target share`);
+  if (p.recencyPpg != null && p.recencyPpg > 0) extra.push(`averaged ${p.recencyPpg.toFixed(1)} PPG down the stretch last year`);
+  if (p.gamesMissed2y != null && p.gamesMissed2y >= 6) extra.push(`missed ${p.gamesMissed2y} games over two years, so there's injury risk`);
+  if (p.isRookie && p.draftRound) extra.push(`a Round ${p.draftRound} rookie (pick ${p.draftPick ?? "?"}) with real draft capital behind the projection`);
+  if (p.depthChartOrder && p.depthChartOrder > 1) extra.push(`currently listed #${p.depthChartOrder} on the depth chart, so the role isn't locked`);
+  if (p.byeWeek) extra.push(`bye in Week ${p.byeWeek}`);
+  if (extra.length) {
+    const cap = extra[0].charAt(0).toUpperCase() + extra[0].slice(1);
+    s.push(cap + (extra.length > 1 ? "; " + extra.slice(1).join("; ") : "") + ".");
+  }
+
+  return s.join(" ");
 }
 
 // ----------------------------------------------------------------------------
@@ -336,27 +419,63 @@ export function recommend(
  * a pair. Uses ADP as the survival signal: a player with ADP beyond the gap
  * to the next-next pick is likely to survive.
  */
+export interface TurnPairPlan {
+  thisPick: number;
+  nextPick: number;
+  gap: number;                 // picks between your two selections
+  grabNow: Player[];           // high-value AND unlikely to survive -> take at thisPick
+  likelyAtNext: Player[];      // should still be there at nextPick -> can wait
+  strategy: string;            // plain-language pair strategy
+}
+
 export function turnPairLookahead(
   allPlayers: Player[],
   state: DraftState,
   teamSlot: number,
-): { thisPick: number; nextPick: number; likelyAtNext: Player[] } {
+): TurnPairPlan {
   const currentOverall = state.picks.length + 1;
   const myPicks = picksForSlot(teamSlot, state.totalRounds, state.numTeams)
     .filter((pk) => pk >= currentOverall);
   const thisPick = myPicks[0] ?? currentOverall;
   const nextPick = myPicks[1] ?? thisPick;
+  const gap = nextPick - thisPick;
 
   const draftedIds = new Set(state.picks.map((p) => p.playerId));
   const available = allPlayers.filter((p) => !draftedIds.has(p.playerId));
+  const eff = (p: Player) => (p.ffcAdp && p.ffcAdp < 999 ? p.ffcAdp : p.adp);
 
-  // players whose ADP suggests they'll survive until nextPick
-  const likelyAtNext = available
-    .filter((p) => p.adp >= nextPick - 2)
+  // Players likely GONE before your next pick (ADP at/under nextPick):
+  // these are the ones you must grab now if you want them.
+  const grabNow = available
+    .filter((p) => eff(p) <= nextPick && eff(p) < 999)
     .sort((a, b) => b.projPoints - a.projPoints)
-    .slice(0, 12);
+    .slice(0, 8);
 
-  return { thisPick, nextPick, likelyAtNext };
+  // Players who should survive to your next pick (ADP comfortably beyond it):
+  const likelyAtNext = available
+    .filter((p) => eff(p) >= nextPick + Math.max(2, Math.floor(gap / 3)))
+    .sort((a, b) => b.projPoints - a.projPoints)
+    .slice(0, 10);
+
+  // Build a strategy sentence: identify best position to secure now vs defer.
+  let strategy = "";
+  if (gap > 1 && grabNow.length) {
+    const topNow = grabNow[0];
+    const topLater = likelyAtNext[0];
+    const scarceNow = grabNow.filter((p) => p.position === topNow.position).length;
+    strategy =
+      `You pick at ${thisPick}, then wait ${gap - 1} picks until ${nextPick}. ` +
+      `${topNow.name} (${topNow.position}) headlines the group unlikely to survive that gap — ` +
+      `secure that tier now. ` +
+      (topLater
+        ? `Depth like ${topLater.name} (${topLater.position}) should still be there at ${nextPick}, so you can safely defer that need.`
+        : `Little of value survives to ${nextPick}, so prioritize your two highest-need starters back-to-back.`) +
+      (scarceNow >= 3 ? ` Note a run risk: several ${topNow.position}s are in the grab-now group.` : "");
+  } else {
+    strategy = `Your next two picks (${thisPick}, ${nextPick}) are close together — take the two best values regardless of position.`;
+  }
+
+  return { thisPick, nextPick, gap, grabNow, likelyAtNext, strategy };
 }
 
 // ----------------------------------------------------------------------------

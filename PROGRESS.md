@@ -68,3 +68,48 @@ Never hardcoded; .env gitignored; only .env.example committed.
 - ESPN projection endpoint undocumented; pipeline degrades to FP ECR then rank.
 - Name-matching across sources uses normalized names; a few edge names may miss
   enrichment (falls back cleanly, never crashes).
+
+---
+
+## v1.2 (build session 3) — DATA HARDENING + REASONING + TESTS. All done.
+Draft is imminent; this pass focused on data trust + explainability.
+
+1. **projPoints per-game bug FIXED** — ESPN returns per-game applied totals;
+   pipeline now scales `proj * 17` when value < 100. (Chase now ~323, not 19.)
+2. **pyarrow added to requirements** — nflverse draft-capital + stats need it;
+   was silently failing. Rookie draft round/pick now populate correctly.
+3. **FFC ADP (independent source)** — Fantasy Football Calculator 12-team PPR
+   real-draft ADP via free REST API (no key, no scraping). Stored as `ffcAdp`,
+   kept separate from ESPN. Engine uses EFFECTIVE adp = ffcAdp || adp.
+4. **ADP confidence** — when ESPN and FFC disagree >25%, player flagged
+   `adpConfidence:"low"` + `adpSpread`. Shown as "ADP uncertain" chip.
+5. **Career arcs** — nflverse multi-season usage (targets+carries+rec) change:
+   `careerTrend` rising/stable/declining (±15% thresholds) + `careerTrendPct`.
+   Rising gets +4% score nudge, declining -4%. Shown as chip.
+6. **Recency signal** — `recencyPpg` = avg PPR pts/game over last up-to-5 games
+   of prior season. Shown as "hot: X PPG late" chip when >=14.
+7. **Per-pick REASONING paragraph** — new `buildReasoning()` in engine produces
+   a deterministic 2-5 sentence "why this pick" from the facts (value framing,
+   roster fit, ADP/market, strategy guardrail, enrichment color). Rendered under
+   each rec card with a green left border. Also `Recommendation.reasoning`,
+   `.posRank`, `.tier` added.
+8. **Turn-pair upgraded** — now returns `{grabNow, likelyAtNext, strategy, gap}`.
+   grabNow = value unlikely to survive to next pick; likelyAtNext = safe to wait.
+   `strategy` is a plain-language pair plan. MyRoster shows two columns + strategy.
+9. **Meticulous test suite** — web/src/engine/engine.test.ts, 31 tests incl. a
+   FULL 192-pick draft simulation asserting Jay's roster is legal + sane, plus
+   scoring exactness, snake order, byes (all 32), baselines, need accounting,
+   reasoning non-empty, effective-ADP=FFC, kicker suppression, QB timing.
+   ALL 31 PASS. Build + typecheck clean. Visually verified via Playwright.
+
+### New DB columns — supabase/migrations/0004_adp_and_trend_columns.sql
+ffc_adp, adp_confidence, adp_spread, career_trend, career_trend_pct, recency_ppg
+Run 0004 in Supabase before the next pipeline run.
+
+### New env — FANTASYPROS_API_KEY already in .env.example. FFC needs NO key.
+
+### To deploy v1.2 (user):
+1. run migration 0004 in Supabase SQL editor
+2. `cd pipeline && pip install -r requirements.txt` (gets pyarrow)
+3. `python build_dataset.py`  (fresh pull w/ FFC + trends)
+4. `cd web && npm install && npm run build` then redeploy / git push

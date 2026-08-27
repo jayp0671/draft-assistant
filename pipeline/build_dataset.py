@@ -147,10 +147,47 @@ def fetch_nflverse_enrichment():
             for season in (SEASON - 2, SEASON - 1):
                 gp = len(g[g["season"] == season])
                 gm += max(0, 17 - gp) if gp > 0 else 0
+
+            # ---- career arc: usage change across the two prior seasons ----
+            career_trend = None
+            career_pct = None
+            try:
+                # usage proxy = targets + rush attempts + receptions per season
+                def season_usage(seas):
+                    d = g[g["season"] == seas]
+                    if not len(d):
+                        return None
+                    cols = [c for c in ("targets", "carries", "receptions", "rushing_attempts") if c in d.columns]
+                    return float(d[cols].sum().sum()) if cols else None
+                u_prev = season_usage(SEASON - 2)
+                u_last = season_usage(SEASON - 1)
+                if u_prev and u_last and u_prev > 20:  # need a real prior baseline
+                    career_pct = round((u_last - u_prev) / u_prev, 3)
+                    if career_pct >= 0.15:
+                        career_trend = "rising"
+                    elif career_pct <= -0.15:
+                        career_trend = "declining"
+                    else:
+                        career_trend = "stable"
+            except Exception:
+                pass
+
+            # ---- recency: fantasy PPG over last up-to-5 games of prior season ----
+            recency_ppg = None
+            try:
+                last_season = g[g["season"] == SEASON - 1].sort_values("week").tail(5)
+                if len(last_season) and "fantasy_points_ppr" in last_season.columns:
+                    recency_ppg = round(float(last_season["fantasy_points_ppr"].mean()), 1)
+            except Exception:
+                pass
+
             out[name.lower()] = {
                 "usageTrend": round(trend, 2),
                 "targetShare": tshare,
                 "gamesMissed2y": gm if gm > 0 else None,
+                "careerTrend": career_trend,
+                "careerTrendPct": career_pct,
+                "recencyPpg": recency_ppg,
             }
     except Exception as e:
         log(f"  usage/durability step failed ({e}); continuing")
@@ -200,6 +237,38 @@ def fetch_espn_projections():
         log(f"  ESPN fetch failed ({e}); ADP/proj will fall back")
     log(f"  -> projections for {len(proj)} players")
     return proj
+
+
+# ---------------------------------------------------------------------------
+# 4b. Fantasy Football Calculator - real human-draft 12-team PPR ADP
+#     Free public REST API, no key, no scraping. Independent of ESPN/FP.
+#     Docs: https://fantasyfootballcalculator.com/api/v1/adp/ppr
+# ---------------------------------------------------------------------------
+def fetch_ffc_adp():
+    log("Fetching Fantasy Football Calculator ADP (12-team PPR)...")
+    out = {}
+    try:
+        r = requests.get(
+            "https://fantasyfootballcalculator.com/api/v1/adp/ppr",
+            params={"teams": 12, "year": SEASON},
+            timeout=30,
+        )
+        r.raise_for_status()
+        players = r.json().get("players", [])
+        if not players:  # current season may be empty pre-release; fall back a year
+            r = requests.get(
+                "https://fantasyfootballcalculator.com/api/v1/adp/ppr",
+                params={"teams": 12, "year": SEASON - 1}, timeout=30,
+            )
+            r.raise_for_status()
+            players = r.json().get("players", [])
+        for pl in players:
+            nm = normalize(pl.get("name", ""))
+            out[nm] = float(pl.get("adp")) if pl.get("adp") else None
+    except Exception as e:
+        log(f"  FFC ADP fetch failed ({e}); continuing without it")
+    log(f"  -> FFC ADP for {len(out)} players")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +368,7 @@ def build():
     players = fetch_sleeper_players()
     enrich = fetch_nflverse_enrichment()
     espn = fetch_espn_projections()
+    ffc = fetch_ffc_adp()
     fp = fetch_fantasypros()
     rookies = fetch_cfbd_rookies()
 
@@ -308,15 +378,28 @@ def build():
         e = espn.get(key, {})
         u = enrich.get(p["name"].lower(), {}) or enrich.get(key, {})
         f = fp.get(key, {})
+        ffc_adp = ffc.get(key)
 
         proj = score_from_espn_raw(e.get("rawStats"))
         if proj is None:
             proj = e.get("espnProj")
+        # ESPN sometimes returns per-game applied totals; scale to season.
+        if proj is not None and proj < 100:
+            proj = proj * 17
         if proj is None:
             proj = 0.0
 
-        # ADP: prefer ESPN; fall back to FantasyPros ECR; else unranked
-        adp = e.get("adp") or f.get("fpEcr") or 999
+        # ADP layering: prefer real-draft FFC ADP, then ESPN, then FP ECR.
+        espn_adp = e.get("adp")
+        adp = ffc_adp or espn_adp or f.get("fpEcr") or 999
+
+        # ADP disagreement / confidence between the two independent sources.
+        adp_spread = None
+        adp_conf = None
+        if ffc_adp and espn_adp:
+            adp_spread = round(abs(ffc_adp - espn_adp), 1)
+            base = (ffc_adp + espn_adp) / 2
+            adp_conf = "low" if base > 0 and (adp_spread / base) > 0.25 else "high"
 
         merged.append({
             "playerId": pid, "name": p["name"], "position": p["position"],
@@ -329,6 +412,12 @@ def build():
             "gamesMissed2y": u.get("gamesMissed2y"),
             "draftRound": u.get("draftRound"), "draftPick": u.get("draftPick"),
             "fpEcr": f.get("fpEcr"),
+            "ffcAdp": ffc_adp,
+            "adpConfidence": adp_conf,
+            "adpSpread": adp_spread,
+            "careerTrend": u.get("careerTrend"),
+            "careerTrendPct": u.get("careerTrendPct"),
+            "recencyPpg": u.get("recencyPpg"),
         })
 
     merged = [m for m in merged if m["projPoints"] > 0 or m["adp"] < 999
@@ -370,6 +459,9 @@ def push_to_supabase(rows):
             "target_share": r["targetShare"], "depth_chart_order": r["depthChartOrder"],
             "games_missed_2y": r["gamesMissed2y"], "draft_round": r["draftRound"],
             "draft_pick": r["draftPick"], "fp_ecr": r["fpEcr"],
+            "ffc_adp": r["ffcAdp"], "adp_confidence": r["adpConfidence"],
+            "adp_spread": r["adpSpread"], "career_trend": r["careerTrend"],
+            "career_trend_pct": r["careerTrendPct"], "recency_ppg": r["recencyPpg"],
         } for r in chunk]
         resp = requests.post(endpoint, headers=headers, data=json.dumps(payload), timeout=60)
         if resp.status_code >= 300:
