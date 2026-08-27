@@ -58,8 +58,8 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="text-lg">🦅</span>
-            <span className="font-black tracking-tight">Fiserv Goons</span>
-            <span className="text-[11px] text-silver/60 uppercase tracking-wider">Draft Assistant</span>
+            <span className="font-display font-bold text-lg uppercase tracking-wider">Fiserv Goons</span>
+            <span className="text-[11px] font-display text-silver/50 uppercase tracking-[0.15em]">Draft Assistant</span>
           </div>
           <span className={`text-[11px] px-2 py-0.5 rounded-full border ${
             draft.online ? "border-good/40 text-good bg-good/5" : "border-warn/40 text-warn bg-warn/5"

@@ -15,12 +15,14 @@ export default function TeamClaim({ claims, mySlot, onClaim, onEnter }: Props) {
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-3xl">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 text-kelly font-semibold tracking-wide text-sm mb-2">
-            <span className="h-2 w-2 rounded-full bg-kelly animate-pulse" /> LIVE DRAFT ROOM
+          <div className="inline-flex items-center gap-2 text-kelly font-display font-bold tracking-[0.15em] uppercase text-sm mb-3">
+            <span className="h-2 w-2 rounded-full bg-kelly animate-pulse" /> Live Draft Room
           </div>
-          <h1 className="text-4xl font-extrabold">Fiserv Goons — Draft Assistant</h1>
-          <p className="text-silver/70 mt-2">
-            12-team full-PPR snake draft · pick your team to enter the shared room
+          <h1 className="text-4xl font-display font-bold uppercase tracking-wider">
+            Fiserv Goons
+          </h1>
+          <p className="text-silver/60 mt-2 text-sm">
+            12-team full-PPR snake draft · pick your team to enter
           </p>
         </div>
 
@@ -36,14 +38,14 @@ export default function TeamClaim({ claims, mySlot, onClaim, onEnter }: Props) {
                 className={[
                   "text-left rounded-xl border p-3 transition",
                   isMine
-                    ? "border-kelly bg-midnight/20 ring-1 ring-kelly"
+                    ? "border-kelly bg-kelly/10 ring-1 ring-kelly/40"
                     : takenByOther
-                    ? "border-edge bg-coal/60 opacity-60"
-                    : "border-edge bg-coal hover:border-kelly/60 hover:bg-coal2",
+                    ? "border-edge bg-coal/60 opacity-50"
+                    : "border-edge bg-coal hover:border-kelly/50 hover:bg-coal2",
                 ].join(" ")}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-silver/60">#{t.slot}</span>
+                  <span className="text-xs font-mono text-silver/50">#{t.slot}</span>
                   {t.isProjectOwner && (
                     <span className="text-[10px] font-bold text-kelly">YOU</span>
                   )}
@@ -51,8 +53,8 @@ export default function TeamClaim({ claims, mySlot, onClaim, onEnter }: Props) {
                     <span className="text-[10px] font-bold text-warn">COMM</span>
                   )}
                 </div>
-                <div className="font-semibold mt-1 truncate">{t.teamName}</div>
-                <div className="text-xs text-silver/70 truncate">{t.owner}</div>
+                <div className="font-display font-semibold uppercase tracking-wide mt-1 truncate">{t.teamName}</div>
+                <div className="text-xs text-silver/50 truncate">{t.owner}</div>
                 {takenByOther && (
                   <div className="text-[10px] text-silver/60 mt-1">claimed</div>
                 )}
@@ -69,7 +71,7 @@ export default function TeamClaim({ claims, mySlot, onClaim, onEnter }: Props) {
             disabled={mySlot == null}
             onClick={onEnter}
             className={[
-              "px-8 py-3 rounded-xl font-semibold transition",
+              "px-8 py-3 rounded-xl font-display font-bold uppercase tracking-wider transition shadow-md",
               mySlot == null
                 ? "bg-coal2 text-silver/60 cursor-not-allowed"
                 : "bg-kelly text-charcoal hover:brightness-110",

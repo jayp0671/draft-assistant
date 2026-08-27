@@ -36,7 +36,7 @@ export default function DraftBoard({ players, picks, onUndoLast }: Props) {
       {/* on-the-clock strip */}
       <div className="px-4 py-2 border-b border-edge flex items-center gap-2 text-sm">
         <span className="text-silver/70">On the clock:</span>
-        <span className="font-semibold text-kelly">
+        <span className="font-display font-bold uppercase tracking-wide text-kelly">
           {TEAMS.find((t) => t.slot === onClockSlot)?.teamName}
         </span>
         <span className="text-xs text-silver/60 ml-auto">{picks.length} picks made</span>
@@ -56,9 +56,9 @@ export default function DraftBoard({ players, picks, onUndoLast }: Props) {
               const team = TEAMS.find((t) => t.slot === pk.team_slot);
               return (
                 <li key={pk.overall_pick}
-                  className="flex items-center gap-2 text-sm bg-coal2/40 rounded px-2 py-1">
+                  className="flex items-center gap-2 text-sm font-display bg-coal2/40 rounded px-2 py-1">
                   <span className="text-xs text-silver/60 w-12">
-                    {pk.round}.{String(((pk.overall_pick - 1) % 12) + 1).padStart(2, "0")}
+                    font-mono {pk.round}.{String(((pk.overall_pick - 1) % 12) + 1).padStart(2, "0")}
                   </span>
                   {pl && <PosBadge pos={pl.position} />}
                   <span className="truncate">{pl?.name ?? pk.player_id}</span>

@@ -38,7 +38,7 @@ export default function LogPick({ players, picks, onLog, onClose }: Props) {
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50" onClick={onClose}>
       <div className="w-full max-w-lg rounded-xl border border-edge bg-coal" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-edge">
-          <h3 className="font-semibold">Log pick #{overall}</h3>
+          <h3 className="font-display font-bold uppercase tracking-wider">Log pick #{overall}</h3>
           <button onClick={onClose} className="text-silver/60 hover:text-white">✕</button>
         </div>
         <div className="p-4 space-y-3">

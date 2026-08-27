@@ -26,7 +26,7 @@ export default function ResetModal({ onReset, onClose }: Props) {
       <div className="w-full max-w-sm rounded-2xl border border-bad/40 bg-coal shadow-glow"
         onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-edge">
-          <h3 className="font-bold text-bad">Reset draft</h3>
+          <h3 className="font-display font-bold uppercase tracking-wider text-bad">Reset draft</h3>
           <button onClick={onClose} className="text-silver/60 hover:text-white">✕</button>
         </div>
         <div className="p-4 space-y-3">

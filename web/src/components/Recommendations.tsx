@@ -32,7 +32,6 @@ export default function Recommendations({ players, picks, mySlot, onQuickLog }: 
     [players, state, onClockSlot],
   );
 
-  // for bye-conflict detection: the on-clock team's current roster byes per pos
   const myByesByPos = useMemo(() => {
     const map: Record<string, number[]> = {};
     for (const pk of picks.filter((p) => p.team_slot === onClockSlot)) {
@@ -47,9 +46,11 @@ export default function Recommendations({ players, picks, mySlot, onQuickLog }: 
       accent
       title="On the Clock"
       right={
-        <div className="text-xs flex items-center gap-2">
-          <span className="text-silver/70">Pick {overall} · Rd {round}</span>
-          <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border ${
+        <div className="clock-bar flex items-center gap-3 px-3 py-1.5 rounded-r-lg">
+          <span className="font-mono text-xs text-silver/70">
+            PICK <span className="text-white font-bold">{overall}</span> · RD <span className="text-white font-bold">{round}</span>
+          </span>
+          <span className={`px-2.5 py-0.5 rounded text-[11px] font-display font-bold uppercase tracking-wider border ${
             isMyTurn ? "bg-kelly/20 text-kelly border-kelly/40" : "bg-midnight/40 text-silver border-edge"
           }`}>
             {onClockTeam?.teamName ?? `Slot ${onClockSlot}`}{isMyTurn ? " — YOU" : ""}
@@ -62,45 +63,54 @@ export default function Recommendations({ players, picks, mySlot, onQuickLog }: 
           No player data loaded yet. Run the data pipeline, or check Supabase config.
         </div>
       ) : (
-        <ul className="p-2 space-y-1.5">
+        <ul className="p-2 space-y-2">
           {recs.map((r, i) => {
             const p = r.player;
             const byeConflict = sharesBye(p.byeWeek, (myByesByPos[p.position] ?? [])[0]) ||
               (myByesByPos[p.position] ?? []).includes(p.byeWeek ?? -1);
             const adpGood = r.adpValue >= 6;
             const adpReach = r.adpValue <= -8;
+            const isTop = i === 0;
             return (
               <li key={p.playerId}
-                className={`rounded-xl border bg-coal2/70 hover:bg-coal2 transition ${
-                  i === 0 ? "border-kelly/40" : "border-edge"
+                className={`rounded-xl border bg-coal2/70 hover:bg-coal2 transition-colors ${
+                  isTop ? "border-kelly/40 ring-1 ring-kelly/10" : "border-edge"
                 }`}>
                 <div className="flex items-stretch">
-                  {/* rank rail */}
-                  <div className={`w-9 shrink-0 flex items-center justify-center rounded-l-xl font-black text-sm ${
-                    i === 0 ? "bg-kelly/15 text-kelly" : "bg-midnight/25 text-silver/70"
+                  {/* rank rail — big athletic number */}
+                  <div className={`w-12 shrink-0 flex items-center justify-center rounded-l-xl ${
+                    isTop ? "bg-kelly/15" : "bg-midnight/20"
                   }`}>
-                    {i + 1}
+                    <span className={`font-display font-bold text-xl ${
+                      isTop ? "text-kelly" : "text-silver/50"
+                    }`}>
+                      {i + 1}
+                    </span>
                   </div>
 
-                  <div className="flex-1 min-w-0 p-2.5">
-                    {/* name row */}
-                    <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0 p-3">
+                    {/* name row — display font for player name */}
+                    <div className="flex items-center gap-2 flex-wrap">
                       <PosBadge pos={p.position} />
-                      <span className="font-bold truncate">{p.name}</span>
-                      <span className="text-xs text-silver/60">{p.team}</span>
-                      {p.isRookie && <span className="text-[9px] font-bold text-kelly">RK</span>}
+                      <span className="font-display font-semibold text-[15px] uppercase tracking-wide truncate">
+                        {p.name}
+                      </span>
+                      <span className="text-xs text-silver/50 font-mono">{p.team}</span>
+                      {p.isRookie && (
+                        <span className="text-[9px] font-display font-bold tracking-wider text-kelly bg-kelly/10 border border-kelly/30 rounded px-1 py-px">ROOKIE</span>
+                      )}
                       <InjuryChip status={p.injuryStatus} />
                       {r.fillsNeed && (
-                        <span className="text-[9px] font-bold text-kelly bg-kelly/10 border border-kelly/30 rounded px-1">NEED</span>
+                        <span className="text-[9px] font-display font-bold tracking-wider text-charcoal bg-kelly rounded px-1.5 py-px">NEED</span>
                       )}
                     </div>
 
-                    {/* clean stat strip */}
-                    <div className="flex items-center gap-1 mt-2 divide-x divide-edge">
-                      <Stat label="VORP" value={r.vorp.toFixed(0)} tone="accent" />
+                    {/* scoreboard stat strip */}
+                    <div className="flex items-center gap-1.5 mt-2.5">
+                      <Stat label="VORP" value={r.vorp.toFixed(0)} accent />
                       <Stat label="Proj" value={p.projPoints.toFixed(0)} />
                       <Stat label="ADP" value={p.adp >= 999 ? "—" : p.adp.toFixed(0)} />
-                      <Stat label="Bye" value={p.byeWeek ?? "—"} tone={byeConflict ? "bad" : "default"} />
+                      <Stat label="Bye" value={p.byeWeek ?? "—"} />
                       {p.targetShare != null && (
                         <Stat label="Tgt%" value={`${(p.targetShare * 100).toFixed(0)}`} />
                       )}
@@ -109,36 +119,34 @@ export default function Recommendations({ players, picks, mySlot, onQuickLog }: 
 
                     {/* reason chips */}
                     <div className="flex flex-wrap gap-1 mt-2">
-                      {adpGood && (
-                        <Chip tone="good">value +{r.adpValue}</Chip>
-                      )}
-                      {adpReach && (
-                        <Chip tone="warn">reach {r.adpValue}</Chip>
-                      )}
+                      {adpGood && <Chip tone="good">value +{r.adpValue.toFixed(0)}</Chip>}
+                      {adpReach && <Chip tone="warn">reach {r.adpValue.toFixed(0)}</Chip>}
                       {byeConflict && <Chip tone="bad">bye stack wk{p.byeWeek}</Chip>}
-                      {p.careerTrend === "rising" && <Chip tone="good">↑ rising usage</Chip>}
+                      {p.careerTrend === "rising" && <Chip tone="good">↑ rising</Chip>}
                       {p.careerTrend === "declining" && <Chip tone="warn">↓ declining</Chip>}
-                      {p.recencyPpg != null && p.recencyPpg >= 14 && <Chip tone="good">hot: {p.recencyPpg} PPG late</Chip>}
+                      {p.recencyPpg != null && p.recencyPpg >= 14 && <Chip tone="good">hot: {p.recencyPpg} PPG</Chip>}
                       {p.adpConfidence === "low" && <Chip tone="warn">ADP uncertain</Chip>}
                       {p.depthChartOrder === 1 && <Chip>starter</Chip>}
-                      {p.depthChartOrder && p.depthChartOrder > 1 && <Chip tone="warn">depth {p.depthChartOrder}</Chip>}
+                      {p.depthChartOrder && p.depthChartOrder > 1 && <Chip tone="warn">depth #{p.depthChartOrder}</Chip>}
                       {p.gamesMissed2y != null && p.gamesMissed2y >= 6 && (
-                        <Chip tone="warn">{p.gamesMissed2y} G missed 2y</Chip>
+                        <Chip tone="warn">{p.gamesMissed2y}G missed 2yr</Chip>
                       )}
-                      {p.draftRound != null && p.isRookie && <Chip>Rd{p.draftRound} rookie</Chip>}
+                      {p.draftRound != null && p.isRookie && <Chip>Rd{p.draftRound} pick</Chip>}
                     </div>
 
-                    {/* full reasoning — the "why this pick" explanation */}
-                    <p className="mt-2 text-[12px] leading-relaxed text-silver/80 border-l-2 border-kelly/40 pl-2.5">
-                      {r.reasoning}
-                    </p>
+                    {/* reasoning paragraph — gradient bar */}
+                    <div className="reasoning-bar mt-2.5 pl-3 py-2 rounded-r">
+                      <p className="text-[11.5px] leading-relaxed text-silver/75">
+                        {r.reasoning}
+                      </p>
+                    </div>
                   </div>
 
-                  {/* action */}
-                  <div className="shrink-0 flex items-center pr-2">
+                  {/* draft action */}
+                  <div className="shrink-0 flex items-center pr-3">
                     <button
                       onClick={() => onQuickLog(onClockSlot, p.playerId)}
-                      className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-kelly text-charcoal hover:brightness-110"
+                      className="font-display font-bold uppercase tracking-wider text-[11px] px-4 py-2 rounded-lg bg-kelly text-charcoal hover:brightness-110 transition shadow-md"
                     >
                       Draft
                     </button>
@@ -160,5 +168,5 @@ function Chip({ children, tone = "default" }: { children: React.ReactNode; tone?
     warn: "bg-warn/10 text-warn border-warn/30",
     bad: "bg-bad/10 text-bad border-bad/30",
   }[tone];
-  return <span className={`text-[10px] px-1.5 py-0.5 rounded border ${cls}`}>{children}</span>;
+  return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${cls}`}>{children}</span>;
 }

@@ -7,19 +7,55 @@ html, body, #root { height: 100%; }
 body {
   margin: 0;
   background:
-    radial-gradient(1200px 600px at 80% -10%, rgba(0,76,84,0.28), transparent 60%),
-    radial-gradient(900px 500px at -10% 10%, rgba(60,179,113,0.10), transparent 55%),
+    /* subtle yard-line texture at ~3% opacity — grounds the dark in "field" */
+    repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 79px,
+      rgba(60,179,113,0.022) 79px,
+      rgba(60,179,113,0.022) 80px
+    ),
+    /* radial field glow */
+    radial-gradient(1200px 600px at 80% -10%, rgba(0,76,84,0.30), transparent 60%),
+    radial-gradient(900px 500px at -10% 10%, rgba(60,179,113,0.08), transparent 55%),
     #0A0F0E;
   color: #E7EEEC;
   font-family: Inter, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/* scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #22312E; border-radius: 6px; }
 ::-webkit-scrollbar-thumb:hover { background: #2c403c; }
 ::-webkit-scrollbar-track { background: transparent; }
 
-/* subtle field-line texture accent for header */
-.eagles-stripe {
-  background: linear-gradient(90deg, #004C54 0%, #013b41 50%, #0A0F0E 100%);
+/* scoreboard stat tile */
+.stat-tile {
+  background: linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.18) 100%);
+  border: 1px solid rgba(60,179,113,0.10);
+  border-radius: 6px;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.4), 0 1px 0 rgba(60,179,113,0.06);
+}
+.stat-tile-accent {
+  background: linear-gradient(180deg, rgba(0,76,84,0.4) 0%, rgba(0,76,84,0.15) 100%);
+  border-color: rgba(60,179,113,0.25);
+}
+
+/* on-the-clock scoreboard bar */
+.clock-bar {
+  background: linear-gradient(90deg, rgba(0,76,84,0.50), rgba(0,76,84,0.15) 70%, transparent);
+  border-left: 3px solid #3CB371;
+}
+
+/* position badge "patch" feel */
+.pos-patch {
+  border-width: 1.5px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+/* reasoning left-bar */
+.reasoning-bar {
+  border-left: 3px solid rgba(60,179,113,0.35);
+  background: linear-gradient(90deg, rgba(0,76,84,0.06), transparent 60%);
 }
